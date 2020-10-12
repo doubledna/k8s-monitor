@@ -1,0 +1,36 @@
+---
+apiVersion: monitoring.coreos.com/v1
+kind: Prometheus
+metadata:
+  labels:
+    prometheus: k8s
+  name: k8s
+  namespace: monitoring
+spec:
+  baseImage: quay.io/prometheus/prometheus
+  # baseImage: quay.azk8s.cn/prometheus/prometheus
+  replicas: 2
+  version: v2.11.0
+  remoteRead: 
+  - url: http://IP:8086/api/v1/prom/read?db=db_name&u=username&p=password
+    readRecent: true
+  remoteWrite:
+  - url: http://IP:8086/api/v1/prom/write?db=db_name&u=username&p=password
+  podMonitorSelector: {}
+  serviceAccountName: prometheus-k8s
+  serviceMonitorNamespaceSelector: {}
+  serviceMonitorSelector: {}
+  ruleSelector:
+    matchLabels:
+      prometheus: k8s
+      role: alert-rules
+  resources:
+    requests:
+      memory: 400Mi
+  alerting:
+    alertmanagers:
+    - name: alertmanager-main
+      namespace: monitoring
+      port: web
+    
+    

@@ -1,0 +1,1119 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  labels:
+    prometheus: k8s
+    role: alert-rules
+  name: prometheus-k8s-rules
+  namespace: monitoring
+spec:
+  groups:
+  - name: k8s.rules
+    rules:
+    - expr: |
+        sum(rate(container_cpu_usage_seconds_total{job="kubelet", image!="", container!="POD"}[5m])) by (namespace)
+      record: namespace:container_cpu_usage_seconds_total:sum_rate
+    - expr: |
+        sum by (namespace, pod, container) (
+          rate(container_cpu_usage_seconds_total{job="kubelet", image!="", container!="POD"}[5m])
+        ) * on (namespace, pod) group_left(node) max by(namespace, pod, node) (kube_pod_info)
+      record: node_namespace_pod_container:container_cpu_usage_seconds_total:sum_rate
+    - expr: |
+        sum(container_memory_usage_bytes{job="kubelet", image!="", container!="POD"}) by (namespace)
+      record: namespace:container_memory_usage_bytes:sum
+    - expr: |
+        sum by (namespace, label_name) (
+            sum(kube_pod_container_resource_requests_memory_bytes{job="kube-state-metrics"} * on (endpoint, instance, job, namespace, pod, service) group_left(phase) (kube_pod_status_phase{phase=~"^(Pending|Running)$"} == 1)) by (namespace, pod)
+          * on (namespace, pod)
+            group_left(label_name) kube_pod_labels{job="kube-state-metrics"}
+        )
+      record: namespace:kube_pod_container_resource_requests_memory_bytes:sum
+    - expr: |
+        sum by (namespace, label_name) (
+            sum(kube_pod_container_resource_requests_cpu_cores{job="kube-state-metrics"} * on (endpoint, instance, job, namespace, pod, service) group_left(phase) (kube_pod_status_phase{phase=~"^(Pending|Running)$"} == 1)) by (namespace, pod)
+          * on (namespace, pod)
+            group_left(label_name) kube_pod_labels{job="kube-state-metrics"}
+        )
+      record: namespace:kube_pod_container_resource_requests_cpu_cores:sum
+    - expr: |
+        sum(
+          label_replace(
+            label_replace(
+              kube_pod_owner{job="kube-state-metrics", owner_kind="ReplicaSet"},
+              "replicaset", "$1", "owner_name", "(.*)"
+            ) * on(replicaset, namespace) group_left(owner_name) kube_replicaset_owner{job="kube-state-metrics"},
+            "workload", "$1", "owner_name", "(.*)"
+          )
+        ) by (namespace, workload, pod)
+      labels:
+        workload_type: deployment
+      record: mixin_pod_workload
+    - expr: |
+        sum(
+          label_replace(
+            kube_pod_owner{job="kube-state-metrics", owner_kind="DaemonSet"},
+            "workload", "$1", "owner_name", "(.*)"
+          )
+        ) by (namespace, workload, pod)
+      labels:
+        workload_type: daemonset
+      record: mixin_pod_workload
+    - expr: |
+        sum(
+          label_replace(
+            kube_pod_owner{job="kube-state-metrics", owner_kind="StatefulSet"},
+            "workload", "$1", "owner_name", "(.*)"
+          )
+        ) by (namespace, workload, pod)
+      labels:
+        workload_type: statefulset
+      record: mixin_pod_workload
+  - name: kube-scheduler.rules
+    rules:
+    - expr: |
+        histogram_quantile(0.99, sum(rate(scheduler_e2e_scheduling_duration_seconds_bucket{job="kube-scheduler"}[5m])) without(instance, pod))
+      labels:
+        quantile: "0.99"
+      record: cluster_quantile:scheduler_e2e_scheduling_duration_seconds:histogram_quantile
+    - expr: |
+        histogram_quantile(0.99, sum(rate(scheduler_scheduling_algorithm_duration_seconds_bucket{job="kube-scheduler"}[5m])) without(instance, pod))
+      labels:
+        quantile: "0.99"
+      record: cluster_quantile:scheduler_scheduling_algorithm_duration_seconds:histogram_quantile
+    - expr: |
+        histogram_quantile(0.99, sum(rate(scheduler_binding_duration_seconds_bucket{job="kube-scheduler"}[5m])) without(instance, pod))
+      labels:
+        quantile: "0.99"
+      record: cluster_quantile:scheduler_binding_duration_seconds:histogram_quantile
+    - expr: |
+        histogram_quantile(0.9, sum(rate(scheduler_e2e_scheduling_duration_seconds_bucket{job="kube-scheduler"}[5m])) without(instance, pod))
+      labels:
+        quantile: "0.9"
+      record: cluster_quantile:scheduler_e2e_scheduling_duration_seconds:histogram_quantile
+    - expr: |
+        histogram_quantile(0.9, sum(rate(scheduler_scheduling_algorithm_duration_seconds_bucket{job="kube-scheduler"}[5m])) without(instance, pod))
+      labels:
+        quantile: "0.9"
+      record: cluster_quantile:scheduler_scheduling_algorithm_duration_seconds:histogram_quantile
+    - expr: |
+        histogram_quantile(0.9, sum(rate(scheduler_binding_duration_seconds_bucket{job="kube-scheduler"}[5m])) without(instance, pod))
+      labels:
+        quantile: "0.9"
+      record: cluster_quantile:scheduler_binding_duration_seconds:histogram_quantile
+    - expr: |
+        histogram_quantile(0.5, sum(rate(scheduler_e2e_scheduling_duration_seconds_bucket{job="kube-scheduler"}[5m])) without(instance, pod))
+      labels:
+        quantile: "0.5"
+      record: cluster_quantile:scheduler_e2e_scheduling_duration_seconds:histogram_quantile
+    - expr: |
+        histogram_quantile(0.5, sum(rate(scheduler_scheduling_algorithm_duration_seconds_bucket{job="kube-scheduler"}[5m])) without(instance, pod))
+      labels:
+        quantile: "0.5"
+      record: cluster_quantile:scheduler_scheduling_algorithm_duration_seconds:histogram_quantile
+    - expr: |
+        histogram_quantile(0.5, sum(rate(scheduler_binding_duration_seconds_bucket{job="kube-scheduler"}[5m])) without(instance, pod))
+      labels:
+        quantile: "0.5"
+      record: cluster_quantile:scheduler_binding_duration_seconds:histogram_quantile
+  - name: kube-apiserver.rules
+    rules:
+    - expr: |
+        histogram_quantile(0.99, sum(rate(apiserver_request_duration_seconds_bucket{job="apiserver"}[5m])) without(instance, pod))
+      labels:
+        quantile: "0.99"
+      record: cluster_quantile:apiserver_request_duration_seconds:histogram_quantile
+    - expr: |
+        histogram_quantile(0.9, sum(rate(apiserver_request_duration_seconds_bucket{job="apiserver"}[5m])) without(instance, pod))
+      labels:
+        quantile: "0.9"
+      record: cluster_quantile:apiserver_request_duration_seconds:histogram_quantile
+    - expr: |
+        histogram_quantile(0.5, sum(rate(apiserver_request_duration_seconds_bucket{job="apiserver"}[5m])) without(instance, pod))
+      labels:
+        quantile: "0.5"
+      record: cluster_quantile:apiserver_request_duration_seconds:histogram_quantile
+  - name: kube-prometheus-node-recording.rules
+    rules:
+    - expr: sum(rate(node_cpu_seconds_total{mode!="idle",mode!="iowait"}[3m])) BY
+        (instance)
+      record: instance:node_cpu:rate:sum
+    - expr: sum((node_filesystem_size_bytes{mountpoint="/"} - node_filesystem_free_bytes{mountpoint="/"}))
+        BY (instance)
+      record: instance:node_filesystem_usage:sum
+    - expr: sum(rate(node_network_receive_bytes_total[3m])) BY (instance)
+      record: instance:node_network_receive_bytes:rate:sum
+    - expr: sum(rate(node_network_transmit_bytes_total[3m])) BY (instance)
+      record: instance:node_network_transmit_bytes:rate:sum
+    - expr: sum(rate(node_cpu_seconds_total{mode!="idle",mode!="iowait"}[5m])) WITHOUT
+        (cpu, mode) / ON(instance) GROUP_LEFT() count(sum(node_cpu_seconds_total)
+        BY (instance, cpu)) BY (instance)
+      record: instance:node_cpu:ratio
+    - expr: sum(rate(node_cpu_seconds_total{mode!="idle",mode!="iowait"}[5m]))
+      record: cluster:node_cpu:sum_rate5m
+    - expr: cluster:node_cpu_seconds_total:rate5m / count(sum(node_cpu_seconds_total)
+        BY (instance, cpu))
+      record: cluster:node_cpu:ratio
+  - name: node-exporter
+    rules:
+    - alert: NodeFilesystemSpaceFillingUp
+      annotations:
+        description: Filesystem on {{ $labels.device }} at {{ $labels.instance }}
+          has only {{ printf "%.2f" $value }}% available space left and is filling
+          up.
+        runbook_url: https://github.com/kubernetes-monitoring/kubernetes-mixin/tree/master/runbook.md#alert-name-nodefilesystemspacefillingup
+        summary: Filesystem is predicted to run out of space within the next 24 hours.
+      expr: |
+        (
+          node_filesystem_avail_bytes{job="node-exporter",fstype!=""} / node_filesystem_size_bytes{job="node-exporter",fstype!=""} * 100 < 40
+        and
+          predict_linear(node_filesystem_avail_bytes{job="node-exporter",fstype!=""}[6h], 24*60*60) < 0
+        and
+          node_filesystem_readonly{job="node-exporter",fstype!=""} == 0
+        )
+      for: 1h
+      labels:
+        severity: warning
+    - alert: NodeFilesystemSpaceFillingUp
+      annotations:
+        description: Filesystem on {{ $labels.device }} at {{ $labels.instance }}
+          has only {{ printf "%.2f" $value }}% available space left and is filling
+          up fast.
+        runbook_url: https://github.com/kubernetes-monitoring/kubernetes-mixin/tree/master/runbook.md#alert-name-nodefilesystemspacefillingup
+        summary: Filesystem is predicted to run out of space within the next 4 hours.
+      expr: |
+        (
+          node_filesystem_avail_bytes{job="node-exporter",fstype!=""} / node_filesystem_size_bytes{job="node-exporter",fstype!=""} * 100 < 20
+        and
+          predict_linear(node_filesystem_avail_bytes{job="node-exporter",fstype!=""}[6h], 4*60*60) < 0
+        and
+          node_filesystem_readonly{job="node-exporter",fstype!=""} == 0
+        )
+      for: 1h
+      labels:
+        severity: critical
+    - alert: NodeFilesystemAlmostOutOfSpace
+      annotations:
+        description: Filesystem on {{ $labels.device }} at {{ $labels.instance }}
+          has only {{ printf "%.2f" $value }}% available space left.
+        runbook_url: https://github.com/kubernetes-monitoring/kubernetes-mixin/tree/master/runbook.md#alert-name-nodefilesystemalmostoutofspace
+        summary: Filesystem has less than 5% space left.
+      expr: |
+        (
+          node_filesystem_avail_bytes{job="node-exporter",fstype!=""} / node_filesystem_size_bytes{job="node-exporter",fstype!=""} * 100 < 5
+        and
+          node_filesystem_readonly{job="node-exporter",fstype!=""} == 0
+        )
+      for: 1h
+      labels:
+        severity: warning
+    - alert: NodeFilesystemAlmostOutOfSpace
+      annotations:
+        description: Filesystem on {{ $labels.device }} at {{ $labels.instance }}
+          has only {{ printf "%.2f" $value }}% available space left.
+        runbook_url: https://github.com/kubernetes-monitoring/kubernetes-mixin/tree/master/runbook.md#alert-name-nodefilesystemalmostoutofspace
+        summary: Filesystem has less than 3% space left.
+      expr: |
+        (
+          node_filesystem_avail_bytes{job="node-exporter",fstype!=""} / node_filesystem_size_bytes{job="node-exporter",fstype!=""} * 100 < 3
+        and
+          node_filesystem_readonly{job="node-exporter",fstype!=""} == 0
+        )
+      for: 1h
+      labels:
+        severity: critical
+    - alert: NodeFilesystemFilesFillingUp
+      annotations:
+        description: Filesystem on {{ $labels.device }} at {{ $labels.instance }}
+          has only {{ printf "%.2f" $value }}% available inodes left and is filling
+          up.
+        runbook_url: https://github.com/kubernetes-monitoring/kubernetes-mixin/tree/master/runbook.md#alert-name-nodefilesystemfilesfillingup
+        summary: Filesystem is predicted to run out of inodes within the next 24 hours.
+      expr: |
+        (
+          node_filesystem_files_free{job="node-exporter",fstype!=""} / node_filesystem_files{job="node-exporter",fstype!=""} * 100 < 40
+        and
+          predict_linear(node_filesystem_files_free{job="node-exporter",fstype!=""}[6h], 24*60*60) < 0
+        and
+          node_filesystem_readonly{job="node-exporter",fstype!=""} == 0
+        )
+      for: 1h
+      labels:
+        severity: warning
+    - alert: NodeFilesystemFilesFillingUp
+      annotations:
+        description: Filesystem on {{ $labels.device }} at {{ $labels.instance }}
+          has only {{ printf "%.2f" $value }}% available inodes left and is filling
+          up fast.
+        runbook_url: https://github.com/kubernetes-monitoring/kubernetes-mixin/tree/master/runbook.md#alert-name-nodefilesystemfilesfillingup
+        summary: Filesystem is predicted to run out of inodes within the next 4 hours.
+      expr: |
+        (
+          node_filesystem_files_free{job="node-exporter",fstype!=""} / node_filesystem_files{job="node-exporter",fstype!=""} * 100 < 20
+        and
+          predict_linear(node_filesystem_files_free{job="node-exporter",fstype!=""}[6h], 4*60*60) < 0
+        and
+          node_filesystem_readonly{job="node-exporter",fstype!=""} == 0
+        )
+      for: 1h
+      labels:
+        severity: critical
+    - alert: NodeFilesystemAlmostOutOfFiles
+      annotations:
+        description: Filesystem on {{ $labels.device }} at {{ $labels.instance }}
+          has only {{ printf "%.2f" $value }}% available inodes left.
+        runbook_url: https://github.com/kubernetes-monitoring/kubernetes-mixin/tree/master/runbook.md#alert-name-nodefilesystemalmostoutoffiles
+        summary: Filesystem has less than 5% inodes left.
+      expr: |
+        (
+          node_filesystem_files_free{job="node-exporter",fstype!=""} / node_filesystem_files{job="node-exporter",fstype!=""} * 100 < 5
+        and
+          node_filesystem_readonly{job="node-exporter",fstype!=""} == 0
+        )
+      for: 1h
+      labels:
+        severity: warning
+    - alert: NodeFilesystemAlmostOutOfFiles
+      annotations:
+        description: Filesystem on {{ $labels.device }} at {{ $labels.instance }}
+          has only {{ printf "%.2f" $value }}% available inodes left.
+        runbook_url: https://github.com/kubernetes-monitoring/kubernetes-mixin/tree/master/runbook.md#alert-name-nodefilesystemalmostoutoffiles
+        summary: Filesystem has less than 3% inodes left.
+      expr: |
+        (
+          node_filesystem_files_free{job="node-exporter",fstype!=""} / node_filesystem_files{job="node-exporter",fstype!=""} * 100 < 3
+        and
+          node_filesystem_readonly{job="node-exporter",fstype!=""} == 0
+        )
+      for: 1h
+      labels:
+        severity: critical
+    - alert: NodeNetworkReceiveErrs
+      annotations:
+        description: '{{ $labels.instance }} interface {{ $labels.device }} has encountered
+          {{ printf "%.0f" $value }} receive errors in the last two minutes.'
+        runbook_url: https://github.com/kubernetes-monitoring/kubernetes-mixin/tree/master/runbook.md#alert-name-nodenetworkreceiveerrs
+        summary: Network interface is reporting many receive errors.
+      expr: |
+        increase(node_network_receive_errs_total[2m]) > 10
+      for: 1h
+      labels:
+        severity: warning
+    - alert: NodeNetworkTransmitErrs
+      annotations:
+        description: '{{ $labels.instance }} interface {{ $labels.device }} has encountered
+          {{ printf "%.0f" $value }} transmit errors in the last two minutes.'
+        runbook_url: https://github.com/kubernetes-monitoring/kubernetes-mixin/tree/master/runbook.md#alert-name-nodenetworktransmiterrs
+        summary: Network interface is reporting many transmit errors.
+      expr: |
+        increase(node_network_transmit_errs_total[2m]) > 10
+      for: 1h
+      labels:
+        severity: warning
+  - name: kubernetes-absent
+    rules:
+    - alert: Alertmanager Pod不可用
+      annotations:
+        # message: Alertmanager has disappeared from Prometheus target discovery.
+        message: Alertmanager已从Prometheus目标发现中消失.
+        runbook_url: https://github.com/kubernetes-monitoring/kubernetes-mixin/tree/master/runbook.md#alert-name-alertmanagerdown
+      expr: |
+        absent(up{job="alertmanager-main",namespace="monitoring"} == 1)
+      # for: 15m
+      for: 1m
+      labels:
+        severity: critical
+    - alert: CoreDNS Pod不可用
+      annotations:
+        # message: CoreDNS has disappeared from Prometheus target discovery.
+        message: CoreDNS已从Prometheus目标发现中消失.
+        runbook_url: https://github.com/kubernetes-monitoring/kubernetes-mixin/tree/master/runbook.md#alert-name-corednsdown
+      expr: |
+        # absent(up{job="kube-dns"} == 1)
+        absent(up{job="coredns"} == 1)
+      # for: 15m
+      for: 1m
+      labels:
+        severity: critical
+    - alert: KubeAPI服务不可用
+      annotations:
+        message: KubeAPI已从Prometheus目标发现中消失.
+        runbook_url: https://github.com/kubernetes-monitoring/kubernetes-mixin/tree/master/runbook.md#alert-name-kubeapidown
+      expr: |
+        absent(up{job="apiserver"} == 1)
+      # for: 15m
+      for: 1m
+      labels:
+        severity: critical
+    - alert: KubeControllerManager不可用
+      annotations:
+        message: KubeControllerManager已从Prometheus目标发现中消失.
+        runbook_url: https://github.com/kubernetes-monitoring/kubernetes-mixin/tree/master/runbook.md#alert-name-kubecontrollermanagerdown
+      expr: |
+        absent(up{job="kube-controller-manager"} == 1)
+      # for: 15m
+      for: 1m
+      labels:
+        severity: critical
+    - alert: KubeScheduler服务不可用
+      annotations:
+        message: KubeScheduler已从Prometheus目标发现中消失.
+        runbook_url: https://github.com/kubernetes-monitoring/kubernetes-mixin/tree/master/runbook.md#alert-name-kubeschedulerdown
+      expr: |
+        absent(up{job="kube-scheduler"} == 1)
+      # for: 15m
+      for: 1m
+      labels:
+        severity: critical
+    - alert: KubeStateMetrics服务不可用
+      annotations:
+        message: KubeStateMetrics已从Prometheus目标发现中消失.
+        runbook_url: https://github.com/kubernetes-monitoring/kubernetes-mixin/tree/master/runbook.md#alert-name-kubestatemetricsdown
+      expr: |
+        absent(up{job="kube-state-metrics"} == 1)
+      # for: 15m
+      for: 1m
+      labels:
+        severity: critical
+    - alert: Kubelet服务不可用
+      annotations:
+        message: Kubelet已从Prometheus目标发现中消失.
+        runbook_url: https://github.com/kubernetes-monitoring/kubernetes-mixin/tree/master/runbook.md#alert-name-kubeletdown
+      expr: |
+        absent(up{job="kubelet"} == 1)
+      # for: 15m
+      for: 1m
+      labels:
+        severity: critical
+    #- alert: NodeExporterDown
+    #  annotations:
+    #    message: NodeExporter has disappeared from Prometheus target discovery.
+    #    runbook_url: https://github.com/kubernetes-monitoring/kubernetes-mixin/tree/master/runbook.md#alert-name-nodeexporterdown
+    #  expr: |
+    #    absent(up{job="node-exporter"} == 1)
+    #  for: 15m
+    #  labels:
+    #    severity: critical
+    - alert: Prometheus服务不可用
+      annotations:
+        message: Prometheus已从Prometheus目标发现中消失.
+        runbook_url: https://github.com/kubernetes-monitoring/kubernetes-mixin/tree/master/runbook.md#alert-name-prometheusdown
+      expr: |
+        absent(up{job="prometheus-k8s",namespace="monitoring"} == 1)
+      for: 15m
+      labels:
+        severity: critical
+    - alert: PrometheusOperator服务不可用
+      annotations:
+        message: PrometheusOperator已从Prometheus目标发现中消失.
+        runbook_url: https://github.com/kubernetes-monitoring/kubernetes-mixin/tree/master/runbook.md#alert-name-prometheusoperatordown
+      expr: |
+        absent(up{job="prometheus-operator",namespace="monitoring"} == 1)
+      for: 15m
+      labels:
+        severity: critical
+  - name: kubernetes-apps
+    rules:
+    - alert: Pod不断重启
+      annotations:
+        message: Pod {{ $labels.namespace }}/{{ $labels.pod }} ({{ $labels.container
+          }}) 每5分钟重启 {{ printf "%.0f" $value }}.
+        runbook_url: https://github.com/kubernetes-monitoring/kubernetes-mixin/tree/master/runbook.md#alert-name-kubepodcrashlooping
+      expr: |
+        rate(kube_pod_container_status_restarts_total{job="kube-state-metrics"}[15m]) * 60 * 5 > 0
+      for: 15m
+      labels:
+        severity: critical
+    - alert: Pod未就绪
+      annotations:
+        message: Pod {{ $labels.namespace }}/{{ $labels.pod }} 超过1分钟处于未就绪状态.
+        runbook_url: https://github.com/kubernetes-monitoring/kubernetes-mixin/tree/master/runbook.md#alert-name-kubepodnotready
+      expr: |
+        sum by (namespace, pod) (kube_pod_status_phase{job="kube-state-metrics", phase=~"Failed|Pending|Unknown"} * on(namespace, pod) group_left(owner_kind) kube_pod_owner{owner_kind!="Job"}) > 0
+      # for: 15m
+      for: 1m
+      labels:
+        severity: critical
+    # - alert: KubeDeploymentGenerationMismatch
+    #   annotations:
+    #     message: Deployment generation for {{ $labels.namespace }}/{{ $labels.deployment
+    #       }} does not match, this indicates that the Deployment has failed but has
+    #       not been rolled back.
+    #     runbook_url: https://github.com/kubernetes-monitoring/kubernetes-mixin/tree/master/runbook.md#alert-name-kubedeploymentgenerationmismatch
+    #   expr: |
+    #     kube_deployment_status_observed_generation{job="kube-state-metrics"}
+    #       !=
+    #     kube_deployment_metadata_generation{job="kube-state-metrics"}
+    #   # for: 15m
+    #   for: 1m
+    #   labels:
+    #     severity: critical
+    - alert: Deployment服务未达到期望副本数
+      annotations:
+        message: Deployment {{ $labels.namespace }}/{{ $labels.deployment }} 5min未达到期望副本数.
+        runbook_url: https://github.com/kubernetes-monitoring/kubernetes-mixin/tree/master/runbook.md#alert-name-kubedeploymentreplicasmismatch
+      expr: |
+        kube_deployment_spec_replicas{job="kube-state-metrics"}
+          !=
+        kube_deployment_status_replicas_available{job="kube-state-metrics"}
+      # for: 15m
+      for: 5m
+      labels:
+        severity: critical
+    - alert: StatefulSet服务未达到期望副本数
+      annotations:
+        message: StatefulSet {{ $labels.namespace }}/{{ $labels.statefulset }} 5min未达到期望副本数.
+        runbook_url: https://github.com/kubernetes-monitoring/kubernetes-mixin/tree/master/runbook.md#alert-name-kubestatefulsetreplicasmismatch
+      expr: |
+        kube_statefulset_status_replicas_ready{job="kube-state-metrics"}
+          !=
+        kube_statefulset_status_replicas{job="kube-state-metrics"}
+      # for: 15m
+      for: 1m
+      labels:
+        severity: critical
+    # - alert: KubeStatefulSetGenerationMismatch
+    #   annotations:
+    #     message: StatefulSet generation for {{ $labels.namespace }}/{{ $labels.statefulset
+    #       }} does not match, this indicates that the StatefulSet has failed but has
+    #       not been rolled back.
+    #     runbook_url: https://github.com/kubernetes-monitoring/kubernetes-mixin/tree/master/runbook.md#alert-name-kubestatefulsetgenerationmismatch
+    #   expr: |
+    #     kube_statefulset_status_observed_generation{job="kube-state-metrics"}
+    #       !=
+    #     kube_statefulset_metadata_generation{job="kube-state-metrics"}
+    #   # for: 15m
+    #   for: 1m
+    #   labels:
+    #     severity: critical
+    - alert: StatefulSet更新未成功
+      annotations:
+        message: StatefulSet {{ $labels.namespace }}/{{ $labels.statefulset }} 1min更新未成功.
+        runbook_url: https://github.com/kubernetes-monitoring/kubernetes-mixin/tree/master/runbook.md#alert-name-kubestatefulsetupdatenotrolledout
+      expr: |
+        max without (revision) (
+          kube_statefulset_status_current_revision{job="kube-state-metrics"}
+            unless
+          kube_statefulset_status_update_revision{job="kube-state-metrics"}
+        )
+          *
+        (
+          kube_statefulset_replicas{job="kube-state-metrics"}
+            !=
+          kube_statefulset_status_replicas_updated{job="kube-state-metrics"}
+        )
+      # for: 15m
+      for: 1m
+      labels:
+        severity: critical
+    - alert: DaemonSetRollout异常
+      annotations:
+        message: DaemonSet {{ $labels.namespace }}/{{ $labels.daemonset }} 期望部署的Pods仅仅准备好{{ $value | humanizePercentage }}.
+        runbook_url: https://github.com/kubernetes-monitoring/kubernetes-mixin/tree/master/runbook.md#alert-name-kubedaemonsetrolloutstuck
+      expr: |
+        kube_daemonset_status_number_ready{job="kube-state-metrics"}
+          /
+        kube_daemonset_status_desired_number_scheduled{job="kube-state-metrics"} < 1.00
+      # for: 15m
+      for: 1m
+      labels:
+        severity: critical
+    - alert: DaemonSet未调度
+      annotations:
+        message: '{{ $value }} Pods of DaemonSet {{ $labels.namespace }}/{{ $labels.daemonset }} 未调度.'
+        runbook_url: https://github.com/kubernetes-monitoring/kubernetes-mixin/tree/master/runbook.md#alert-name-kubedaemonsetnotscheduled
+      expr: |
+        kube_daemonset_status_desired_number_scheduled{job="kube-state-metrics"}
+          -
+        kube_daemonset_status_current_number_scheduled{job="kube-state-metrics"} > 0
+      # for: 10m
+      for: 1m
+      labels:
+        severity: warning
+    - alert: DaemonSet丢失调度
+      annotations:
+        message: '{{ $value }} Pods of DaemonSet {{ $labels.namespace }}/{{ $labels.daemonset }} 丢失调度.'
+        runbook_url: https://github.com/kubernetes-monitoring/kubernetes-mixin/tree/master/runbook.md#alert-name-kubedaemonsetmisscheduled
+      expr: |
+        kube_daemonset_status_number_misscheduled{job="kube-state-metrics"} > 0
+      for: 10m
+      labels:
+        severity: warning
+    # - alert: KubeCronJobRunning
+    #   annotations:
+    #     message: CronJob {{ $labels.namespace }}/{{ $labels.cronjob }} is taking more
+    #       than 1h to complete.
+    #     runbook_url: https://github.com/kubernetes-monitoring/kubernetes-mixin/tree/master/runbook.md#alert-name-kubecronjobrunning
+    #   expr: |
+    #     time() - kube_cronjob_next_schedule_time{job="kube-state-metrics"} > 3600
+    #   for: 1h
+    #   labels:
+    #     severity: warning
+    - alert: Job完成情况
+      annotations:
+        message: Job {{ $labels.namespace }}/{{ $labels.job_name }} 超过一小时未完成.
+        runbook_url: https://github.com/kubernetes-monitoring/kubernetes-mixin/tree/master/runbook.md#alert-name-kubejobcompletion
+      expr: |
+        kube_job_spec_completions{job="kube-state-metrics"} - kube_job_status_succeeded{job="kube-state-metrics"}  > 0
+      for: 1h
+      labels:
+        severity: warning
+    - alert: Job执行失败
+      annotations:
+        message: Job {{ $labels.namespace }}/{{ $labels.job_name }} 执行失败.
+        runbook_url: https://github.com/kubernetes-monitoring/kubernetes-mixin/tree/master/runbook.md#alert-name-kubejobfailed
+      expr: |
+        kube_job_failed{job="kube-state-metrics"}  > 0
+      for: 15m
+      labels:
+        severity: warning
+    - alert: KubeHpaReplicasMismatch
+      annotations:
+        message: HPA {{ $labels.namespace }}/{{ $labels.hpa }} has not matched the
+          desired number of replicas for longer than 15 minutes.
+        runbook_url: https://github.com/kubernetes-monitoring/kubernetes-mixin/tree/master/runbook.md#alert-name-kubehpareplicasmismatch
+      expr: |
+        (kube_hpa_status_desired_replicas{job="kube-state-metrics"}
+          !=
+        kube_hpa_status_current_replicas{job="kube-state-metrics"})
+          and
+        changes(kube_hpa_status_current_replicas[15m]) == 0
+      for: 15m
+      labels:
+        severity: warning
+    - alert: KubeHpaMaxedOut
+      annotations:
+        message: HPA {{ $labels.namespace }}/{{ $labels.hpa }} has been running at
+          max replicas for longer than 15 minutes.
+        runbook_url: https://github.com/kubernetes-monitoring/kubernetes-mixin/tree/master/runbook.md#alert-name-kubehpamaxedout
+      expr: |
+        kube_hpa_status_current_replicas{job="kube-state-metrics"}
+          ==
+        kube_hpa_spec_max_replicas{job="kube-state-metrics"}
+      for: 15m
+      labels:
+        severity: warning
+  - name: kubernetes-resources
+    rules:
+    - alert: KubeCPU使用过量
+      annotations:
+        message: 群集已过度使用Pod的CPU资源请求，并且无法容忍节点故障.
+        runbook_url: https://github.com/kubernetes-monitoring/kubernetes-mixin/tree/master/runbook.md#alert-name-kubecpuovercommit
+      expr: |
+        sum(namespace:kube_pod_container_resource_requests_cpu_cores:sum)
+          /
+        sum(kube_node_status_allocatable_cpu_cores)
+          >
+        (count(kube_node_status_allocatable_cpu_cores)-1) / count(kube_node_status_allocatable_cpu_cores)
+      for: 5m
+      labels:
+        severity: warning
+    - alert: Kube内存使用过量
+      annotations:
+        message: 群集已过量使用Pod的内存资源请求，因此无法忍受节点故障.
+        runbook_url: https://github.com/kubernetes-monitoring/kubernetes-mixin/tree/master/runbook.md#alert-name-kubememovercommit
+      expr: |
+        sum(namespace:kube_pod_container_resource_requests_memory_bytes:sum)
+          /
+        sum(kube_node_status_allocatable_memory_bytes)
+          >
+        (count(kube_node_status_allocatable_memory_bytes)-1)
+          /
+        count(kube_node_status_allocatable_memory_bytes)
+      for: 5m
+      labels:
+        severity: warning
+    - alert: KubeCPU使用过量
+      annotations:
+        message: 群集已超额使用了对命名空间的CPU资源请求。
+        runbook_url: https://github.com/kubernetes-monitoring/kubernetes-mixin/tree/master/runbook.md#alert-name-kubecpuovercommit
+      expr: |
+        sum(kube_resourcequota{job="kube-state-metrics", type="hard", resource="cpu"})
+          /
+        sum(kube_node_status_allocatable_cpu_cores)
+          > 1.5
+      for: 5m
+      labels:
+        severity: warning
+    - alert: Kube内存使用过量
+      annotations:
+        message: 群集已超额使用了对命名空间的内存资源请求。
+        runbook_url: https://github.com/kubernetes-monitoring/kubernetes-mixin/tree/master/runbook.md#alert-name-kubememovercommit
+      expr: |
+        sum(kube_resourcequota{job="kube-state-metrics", type="hard", resource="memory"})
+          /
+        sum(kube_node_status_allocatable_memory_bytes{job="node-exporter"})
+          > 1.5
+      for: 5m
+      labels:
+        severity: warning
+    - alert: 超过Kube配额
+      annotations:
+        message: Namespace {{ $labels.namespace }} is using {{ $value | humanizePercentage
+          }} of its {{ $labels.resource }} quota.
+        runbook_url: https://github.com/kubernetes-monitoring/kubernetes-mixin/tree/master/runbook.md#alert-name-kubequotaexceeded
+      expr: |
+        kube_resourcequota{job="kube-state-metrics", type="used"}
+          / ignoring(instance, job, type)
+        (kube_resourcequota{job="kube-state-metrics", type="hard"} > 0)
+          > 0.90
+      for: 15m
+      labels:
+        severity: warning
+    - alert: CPUThrottlingHigh
+      annotations:
+        message: '{{ $value | humanizePercentage }} throttling of CPU in namespace
+          {{ $labels.namespace }} for container {{ $labels.container }} in pod {{
+          $labels.pod }}.'
+        runbook_url: https://github.com/kubernetes-monitoring/kubernetes-mixin/tree/master/runbook.md#alert-name-cputhrottlinghigh
+      expr: |
+        sum(increase(container_cpu_cfs_throttled_periods_total{container!="", }[5m])) by (container, pod, namespace)
+          /
+        sum(increase(container_cpu_cfs_periods_total{}[5m])) by (container, pod, namespace)
+          > ( 25 / 100 )
+      for: 15m
+      labels:
+        severity: warning
+  - name: kubernetes-storage
+    rules:
+    - alert: KubePersistentVolumeUsageCritical
+      annotations:
+        message: The PersistentVolume claimed by {{ $labels.persistentvolumeclaim
+          }} in Namespace {{ $labels.namespace }} is only {{ $value | humanizePercentage
+          }} free.
+        runbook_url: https://github.com/kubernetes-monitoring/kubernetes-mixin/tree/master/runbook.md#alert-name-kubepersistentvolumeusagecritical
+      expr: |
+        kubelet_volume_stats_available_bytes{job="kubelet"}
+          /
+        kubelet_volume_stats_capacity_bytes{job="kubelet"}
+          < 0.03
+      for: 1m
+      labels:
+        severity: critical
+    - alert: KubePersistentVolumeFullInFourDays
+      annotations:
+        message: Based on recent sampling, the PersistentVolume claimed by {{ $labels.persistentvolumeclaim
+          }} in Namespace {{ $labels.namespace }} is expected to fill up within four
+          days. Currently {{ $value | humanizePercentage }} is available.
+        runbook_url: https://github.com/kubernetes-monitoring/kubernetes-mixin/tree/master/runbook.md#alert-name-kubepersistentvolumefullinfourdays
+      expr: |
+        (
+          kubelet_volume_stats_available_bytes{job="kubelet"}
+            /
+          kubelet_volume_stats_capacity_bytes{job="kubelet"}
+        ) < 0.15
+        and
+        predict_linear(kubelet_volume_stats_available_bytes{job="kubelet"}[6h], 4 * 24 * 3600) < 0
+      for: 5m
+      labels:
+        severity: critical
+    - alert: KubePersistentVolumeErrors
+      annotations:
+        message: The persistent volume {{ $labels.persistentvolume }} has status {{
+          $labels.phase }}.
+        runbook_url: https://github.com/kubernetes-monitoring/kubernetes-mixin/tree/master/runbook.md#alert-name-kubepersistentvolumeerrors
+      expr: |
+        kube_persistentvolume_status_phase{phase=~"Failed|Pending",job="kube-state-metrics"} > 0
+      for: 5m
+      labels:
+        severity: critical
+  - name: kubernetes-system
+    rules:
+    - alert: Node未就绪
+      annotations:
+        message: '{{ $labels.node }} 超过一分钟未就绪.'
+        runbook_url: https://github.com/kubernetes-monitoring/kubernetes-mixin/tree/master/runbook.md#alert-name-kubenodenotready
+      expr: |
+        kube_node_status_condition{job="kube-state-metrics",condition="Ready",status="true"} == 0
+      # for: 15m
+      for: 1m
+      labels:
+        severity: warning
+    - alert:  Kube版本不一致
+      annotations:
+        message: Kubernetes有{{ $value}}个不同版本组件正在运行.
+        runbook_url: https://github.com/kubernetes-monitoring/kubernetes-mixin/tree/master/runbook.md#alert-name-kubeversionmismatch
+      expr: |
+        count(count by (gitVersion) (label_replace(kubernetes_build_info{job!~"kube-dns|coredns"},"gitVersion","$1","gitVersion","(v[0-9]*.[0-9]*.[0-9]*).*"))) > 1
+      for: 15m
+      labels:
+        severity: warning
+    - alert: KubeClient错误
+      annotations:
+        message: Kubernetes API server client '{{ $labels.job }}/{{ $labels.instance
+          }}' is experiencing {{ $value | humanizePercentage }} errors.'
+        runbook_url: https://github.com/kubernetes-monitoring/kubernetes-mixin/tree/master/runbook.md#alert-name-kubeclienterrors
+      expr: |
+        (sum(rate(rest_client_requests_total{code=~"5.."}[5m])) by (instance, job)
+          /
+        sum(rate(rest_client_requests_total[5m])) by (instance, job))
+        > 0.01
+      # for: 15m
+      for: 1m
+      labels:
+        severity: warning
+    - alert: Kubelet Pod过多
+      annotations:
+        message: Kubelet '{{ $labels.node }}' is running at {{ $value | humanizePercentage
+          }} of its Pod capacity.
+        runbook_url: https://github.com/kubernetes-monitoring/kubernetes-mixin/tree/master/runbook.md#alert-name-kubelettoomanypods
+      expr: |
+        max(max(kubelet_running_pod_count{job="kubelet"}) by(instance) * on(instance) group_left(node) kubelet_node_name{job="kubelet"}) by(node) / max(kube_node_status_capacity_pods{job="kube-state-metrics"}) by(node) > 0.95
+      # for: 15m
+      for: 1m
+      labels:
+        severity: warning
+    - alert: KubeAPI延迟过高
+      annotations:
+        # message: The API server has a 99th percentile latency of {{ $value }} seconds
+        #   for {{ $labels.verb }} {{ $labels.resource }}.
+        message: KubeAPI有99％请求延迟为{{ $value }}秒在{{ $labels.verb }} {{ $labels.resource }}.
+        runbook_url: https://github.com/kubernetes-monitoring/kubernetes-mixin/tree/master/runbook.md#alert-name-kubeapilatencyhigh
+      expr: |
+        cluster_quantile:apiserver_request_duration_seconds:histogram_quantile{job="apiserver",quantile="0.99",subresource!="log",verb!~"^(?:LIST|WATCH|WATCHLIST|PROXY|CONNECT)$"} > 1
+      for: 10m
+      labels:
+        severity: warning
+    - alert: KubeAPI延迟过高
+      annotations:
+        message: KubeAPI有99％请求延迟为{{ $value }}秒在{{ $labels.verb }} {{ $labels.resource }}.
+        runbook_url: https://github.com/kubernetes-monitoring/kubernetes-mixin/tree/master/runbook.md#alert-name-kubeapilatencyhigh
+      expr: |
+        cluster_quantile:apiserver_request_duration_seconds:histogram_quantile{job="apiserver",quantile="0.99",subresource!="log",verb!~"^(?:LIST|WATCH|WATCHLIST|PROXY|CONNECT)$"} > 4
+      for: 10m
+      labels:
+        severity: critical
+    - alert: KubeAPIErrorsHigh
+      annotations:
+        message: API server is returning errors for {{ $value | humanizePercentage
+          }} of requests.
+        runbook_url: https://github.com/kubernetes-monitoring/kubernetes-mixin/tree/master/runbook.md#alert-name-kubeapierrorshigh
+      expr: |
+        sum(rate(apiserver_request_total{job="apiserver",code=~"^(?:5..)$"}[5m]))
+          /
+        sum(rate(apiserver_request_total{job="apiserver"}[5m])) > 0.03
+      for: 10m
+      labels:
+        severity: critical
+    - alert: KubeAPI错误过多
+      annotations:
+        message: API server is returning errors for {{ $value | humanizePercentage
+          }} of requests for {{ $labels.verb }} {{ $labels.resource }} {{ $labels.subresource
+          }}.
+        runbook_url: https://github.com/kubernetes-monitoring/kubernetes-mixin/tree/master/runbook.md#alert-name-kubeapierrorshigh
+      expr: |
+        sum(rate(apiserver_request_total{job="apiserver",code=~"^(?:5..)$"}[5m])) by (resource,subresource,verb)
+          /
+        sum(rate(apiserver_request_total{job="apiserver"}[5m])) by (resource,subresource,verb) > 0.10
+      for: 10m
+      labels:
+        severity: critical
+    - alert: Kube客户证书到期
+      annotations:
+        message: 用于验证apiserver的客户端证书的有效期限少于7.0天.
+        runbook_url: https://github.com/kubernetes-monitoring/kubernetes-mixin/tree/master/runbook.md#alert-name-kubeclientcertificateexpiration
+      expr: |
+        apiserver_client_certificate_expiration_seconds_count{job="apiserver"} > 0 and histogram_quantile(0.01, sum by (job, le) (rate(apiserver_client_certificate_expiration_seconds_bucket{job="apiserver"}[5m]))) < 604800
+      labels:
+        severity: warning
+    - alert: Kube客户证书到期
+      annotations:
+        message: 用于验证apiserver的客户端证书的有效期限少于1.0天.
+        runbook_url: https://github.com/kubernetes-monitoring/kubernetes-mixin/tree/master/runbook.md#alert-name-kubeclientcertificateexpiration
+      expr: |
+        apiserver_client_certificate_expiration_seconds_count{job="apiserver"} > 0 and histogram_quantile(0.01, sum by (job, le) (rate(apiserver_client_certificate_expiration_seconds_bucket{job="apiserver"}[5m]))) < 86400
+      labels:
+        severity: critical
+  - name: prometheus
+    rules:
+    - alert: Prometheus配置不正确
+      annotations:
+        # description: Prometheus {{$labels.namespace}}/{{$labels.pod}} has failed to
+        #   reload its configuration.
+        description: Prometheus {{ $labels.namespace }}/{{ $labels.pod }}无法重新加载其配置.
+        summary: Prometheus重载配置失败.
+      expr: |
+        # Without max_over_time, failed scrapes could create false negatives, see
+        # https://www.robustperception.io/alerting-on-gauges-in-prometheus-2-0 for details.
+        max_over_time(prometheus_config_last_reload_successful{job="prometheus-k8s",namespace="monitoring"}[5m]) == 0
+      for: 10m
+      labels:
+        severity: critical
+    - alert: Prometheus警报队列已满
+      annotations:
+        # description: Alert notification queue of Prometheus {{$labels.namespace}}/{{$labels.pod}}
+        #   is running full. 
+        description: Prometheus {{ $labels.namespace }}/{{ $labels.pod }}的警报通知队列已满.
+        summary: Prometheus警报队列已满超过30min.
+      expr: |
+        # Without min_over_time, failed scrapes could create false negatives, see
+        # https://www.robustperception.io/alerting-on-gauges-in-prometheus-2-0 for details.
+        (
+          predict_linear(prometheus_notifications_queue_length{job="prometheus-k8s",namespace="monitoring"}[5m], 60 * 30)
+        >
+          min_over_time(prometheus_notifications_queue_capacity{job="prometheus-k8s",namespace="monitoring"}[5m])
+        )
+      for: 15m
+      labels:
+        severity: warning
+    - alert: Prometheus发送报警给Alertmanagers错误
+      annotations:
+        # description: '{{ printf "%.1f" $value }}% errors while sending alerts from
+        #   Prometheus {{$labels.namespace}}/{{$labels.pod}} to Alertmanager {{$labels.alertmanager}}.'
+        description: 'Prometheus {{$labels.namespace}}/{{$labels.pod}} 向 Alertmanager {{$labels.alertmanager}} 发送警报时，出现 {{ printf "%.1f" $value }}%错误.'
+        summary: Prometheus在将警报发送到特定的Alertmanager时遇到了超过1％的错误.
+      expr: |
+        (
+          rate(prometheus_notifications_errors_total{job="prometheus-k8s",namespace="monitoring"}[5m])
+        /
+          rate(prometheus_notifications_sent_total{job="prometheus-k8s",namespace="monitoring"}[5m])
+        )
+        * 100
+        > 1
+      for: 15m
+      labels:
+        severity: warning
+    - alert: Prometheus发送报警给Alertmanagers错误
+      annotations:
+        description: 'Prometheus {{$labels.namespace}}/{{$labels.pod}} 向 Alertmanager {{$labels.alertmanager}} 发送警报时，出现 {{ printf "%.1f" $value }}%错误.'
+        summary: Prometheus在将警报发送到特定的Alertmanager时遇到了超过3％的错误.
+      expr: |
+        min without(alertmanager) (
+          rate(prometheus_notifications_errors_total{job="prometheus-k8s",namespace="monitoring"}[5m])
+        /
+          rate(prometheus_notifications_sent_total{job="prometheus-k8s",namespace="monitoring"}[5m])
+        )
+        * 100
+        > 3
+      for: 15m
+      labels:
+        severity: critical
+    - alert: Prometheus连接Alertmanagers失败
+      annotations:
+        description: Prometheus{{$labels.namespace}}/{{$labels.pod}}未连接任何Alertmanagers服务.
+        summary: Prometheus未连接任何Alertmanagers.
+      expr: |
+        # Without max_over_time, failed scrapes could create false negatives, see
+        # https://www.robustperception.io/alerting-on-gauges-in-prometheus-2-0 for details.
+        max_over_time(prometheus_notifications_alertmanagers_discovered{job="prometheus-k8s",namespace="monitoring"}[5m]) < 1
+      for: 10m
+      labels:
+        severity: warning
+    - alert: PrometheusTSDB重载失败
+      annotations:
+        # description: Prometheus {{$labels.namespace}}/{{$labels.pod}} has detected
+        #   {{$value | humanize}} reload failures over the last 3h.
+        description: Prometheus {{$labels.namespace}}/{{$labels.pod}} 已检查到 {{$value | humanize}} 重载失败超过3小时.
+        summary: Prometheus在从磁盘重新加载块时遇到问题.
+      expr: |
+        increase(prometheus_tsdb_reloads_failures_total{job="prometheus-k8s",namespace="monitoring"}[3h]) > 0
+      for: 4h
+      labels:
+        severity: warning
+    # - alert: PrometheusTSDBCompactionsFailing
+    #   annotations:
+    #     description: Prometheus {{$labels.namespace}}/{{$labels.pod}} has detected
+    #       {{$value | humanize}} compaction failures over the last 3h.
+    #     summary: Prometheus has issues compacting blocks.
+    #   expr: |
+    #     increase(prometheus_tsdb_compactions_failed_total{job="prometheus-k8s",namespace="monitoring"}[3h]) > 0
+    #   for: 4h
+    #   labels:
+    #     severity: warning
+    # - alert: PrometheusNotIngestingSamples
+    #   annotations:
+    #     description: Prometheus {{$labels.namespace}}/{{$labels.pod}} is not ingesting
+    #       samples.
+    #     summary: Prometheus is not ingesting samples.
+    #   expr: |
+    #     rate(prometheus_tsdb_head_samples_appended_total{job="prometheus-k8s",namespace="monitoring"}[5m]) <= 0
+    #   for: 10m
+    #   labels:
+    #     severity: warning
+    # - alert: PrometheusDuplicateTimestamps
+    #   annotations:
+    #     description: Prometheus {{$labels.namespace}}/{{$labels.pod}} is dropping
+    #       {{ printf "%.4g" $value  }} samples/s with different values but duplicated
+    #       timestamp.
+    #     summary: Prometheus is dropping samples with duplicate timestamps.
+    #   expr: |
+    #     rate(prometheus_target_scrapes_sample_duplicate_timestamp_total{job="prometheus-k8s",namespace="monitoring"}[5m]) > 0
+    #   for: 10m
+    #   labels:
+    #     severity: warningz
+    # - alert: Prometheus时间戳乱序
+    #   annotations:
+    #     # description: Prometheus {{$labels.namespace}}/{{$labels.pod}} is dropping
+    #     #   {{ printf "%.4g" $value  }} samples/s with timestamps arriving out of order.
+    #     description: Prometheus {{$labels.namespace}}/{{$labels.pod}} 正在删除
+    #       {{ printf "%.4g" $value  }} 个样本/秒 时间戳不对.
+    #     summary: Prometheus删除时间戳不对的样本.
+    #   expr: |
+    #     rate(prometheus_target_scrapes_sample_out_of_order_total{job="prometheus-k8s",namespace="monitoring"}[5m]) > 0
+    #   for: 10m
+    #   labels:
+    #     severity: warning
+    - alert: Prometheus远程存储故障
+      annotations:
+        description: Prometheus {{$labels.namespace}}/{{$labels.pod}} failed to send
+          {{ printf "%.1f" $value }}% of the samples to queue {{$labels.queue}}.
+        summary: PPrometheus无法将样本发送到远程存储.
+      expr: |
+        (
+          rate(prometheus_remote_storage_failed_samples_total{job="prometheus-k8s",namespace="monitoring"}[5m])
+        /
+          (
+            rate(prometheus_remote_storage_failed_samples_total{job="prometheus-k8s",namespace="monitoring"}[5m])
+          +
+            rate(prometheus_remote_storage_succeeded_samples_total{job="prometheus-k8s",namespace="monitoring"}[5m])
+          )
+        )
+        * 100
+        > 1
+      for: 15m
+      labels:
+        severity: critical
+    - alert: Prometheus远程写滞后
+      annotations:
+        # description: Prometheus {{$labels.namespace}}/{{$labels.pod}} remote write
+        #   is {{ printf "%.1f" $value }}s behind for queue {{$labels.queue}}.
+        description: Prometheus {{$labels.namespace}}/{{$labels.pod}} 远程写队列{{$labels.queue}}滞后{{ printf "%.1f" $value }}s
+        summary: Prometheus远程写滞后.
+      expr: |
+        # Without max_over_time, failed scrapes could create false negatives, see
+        # https://www.robustperception.io/alerting-on-gauges-in-prometheus-2-0 for details.
+        (
+          max_over_time(prometheus_remote_storage_highest_timestamp_in_seconds{job="prometheus-k8s",namespace="monitoring"}[5m])
+        - on(job, instance) group_right
+          max_over_time(prometheus_remote_storage_queue_highest_sent_timestamp_seconds{job="prometheus-k8s",namespace="monitoring"}[5m])
+        )
+        > 120
+      for: 15m
+      labels:
+        severity: critical
+    # - alert: PrometheusRemoteWriteDesiredShards
+    #   annotations:
+    #     description: Prometheus {{$labels.namespace}}/{{$labels.pod}} remote write
+    #       desired shards calculation wants to run {{ printf $value }} shards, which
+    #       is more than the max of {{ printf `prometheus_remote_storage_shards_max{instance="%s",job="prometheus-k8s",namespace="monitoring"}`
+    #       $labels.instance | query | first | value }}.
+    #     summary: Prometheus remote write desired shards calculation wants to run more
+    #       than configured max shards.
+    #   expr: |
+    #     # Without max_over_time, failed scrapes could create false negatives, see
+    #     # https://www.robustperception.io/alerting-on-gauges-in-prometheus-2-0 for details.
+    #     (
+    #       max_over_time(prometheus_remote_storage_shards_desired{job="prometheus-k8s",namespace="monitoring"}[5m])
+    #     > on(job, instance) group_right
+    #       max_over_time(prometheus_remote_storage_shards_max{job="prometheus-k8s",namespace="monitoring"}[5m])
+    #     )
+    #   for: 15m
+    #   labels:
+    #     severity: warning
+    - alert: Prometheus规则执行失败
+      annotations:
+        # description: Prometheus {{$labels.namespace}}/{{$labels.pod}} has failed to
+        #   evaluate {{ printf "%.0f" $value }} rules in the last 5m.
+        description: Prometheus {{$labels.namespace}}/{{$labels.pod}}在最近5min内无法通过规则{{ printf "%.0f" $value }}的评估
+        summary: Prometheus无法通过规则评估。
+      expr: |
+        increase(prometheus_rule_evaluation_failures_total{job="prometheus-k8s",namespace="monitoring"}[5m]) > 0
+      for: 15m
+      labels:
+        severity: critical
+    - alert: Prometheus丢失规则评估
+      annotations:
+        description: Prometheus {{$labels.namespace}}/{{$labels.pod}} has missed {{
+          printf "%.0f" $value }} rule group evaluations in the last 5m.
+        summary: 由于规则组评估缓慢，Prometheus缺少规则评估。
+      expr: |
+        increase(prometheus_rule_group_iterations_missed_total{job="prometheus-k8s",namespace="monitoring"}[5m]) > 0
+      for: 15m
+      labels:
+        severity: warning
+  - name: alertmanager.rules
+    rules:
+    - alert: Alertmanager配置不一致
+      annotations:
+        # message: The configuration of the instances of the Alertmanager cluster `{{$labels.service}}`
+        #   are out of sync.
+        message: Alertmanager集群 `{{$labels.service}}`实例配置不同步.
+      expr: |
+        count_values("config_hash", alertmanager_config_hash{job="alertmanager-main",namespace="monitoring"}) BY (service) / ON(service) GROUP_LEFT() label_replace(max(prometheus_operator_spec_replicas{job="prometheus-operator",namespace="monitoring",controller="alertmanager"}) by (name, job, namespace, controller), "service", "alertmanager-$1", "name", "(.*)") != 1
+      for: 5m
+      labels:
+        severity: critical
+    - alert: Alertmanager重载失败
+      annotations:
+        # message: Reloading Alertmanager's configuration has failed for {{ $labels.namespace
+        #   }}/{{ $labels.pod}}.
+        message:  Alertmanager {{ $labels.namespace }}/{{ $labels.pod}}载入配置失败.
+      expr: |
+        alertmanager_config_last_reload_successful{job="alertmanager-main",namespace="monitoring"} == 0
+      for: 10m
+      labels:
+        severity: warning
+    - alert: Alertmanager成员不一致
+      annotations:
+        message: Alertmanager尚未找到群集的所有其他成员.
+      expr: |
+        alertmanager_cluster_members{job="alertmanager-main",namespace="monitoring"}
+          != on (service) GROUP_LEFT()
+        count by (service) (alertmanager_cluster_members{job="alertmanager-main",namespace="monitoring"})
+      for: 5m
+      labels:
+        severity: critical
+  # 常规配置部分
+  - name: general.rules
+    rules:
+    - alert: 目标不存在
+      annotations:
+        message: '{{ $labels.job }} 目标中的 {{ printf "%.4g" $value }}% 不存在'
+      expr: 100 * (count(up == 0) BY (job, namespace, service) / count(up) BY (job,
+        namespace, service)) > 10
+      # for: 10m
+      for: 1m
+      labels:
+        severity: warning
+  # - name: node-time
+  #   rules:
+  #   - alert: ClockSkewDetected
+  #     annotations:
+  #       message: Clock skew detected on node-exporter {{ $labels.namespace }}/{{ $labels.pod
+  #         }}. Ensure NTP is configured correctly on this host.
+  #     expr: |
+  #       abs(node_timex_offset_seconds{job="node-exporter"}) > 0.05
+  #     for: 2m
+  #     labels:
+  #       severity: warning
+  # - name: node-network
+  #   rules:
+  #   - alert: NodeNetworkInterfaceFlapping
+  #     annotations:
+  #       message: Network interface "{{ $labels.device }}" changing it's up status
+  #         often on node-exporter {{ $labels.namespace }}/{{ $labels.pod }}"
+  #     expr: |
+  #       changes(node_network_up{job="node-exporter",device!~"veth.+"}[2m]) > 2
+  #     for: 2m
+  #     labels:
+  #       severity: warning
+  - name: prometheus-operator
+    rules:
+    - alert: PrometheusOperator调用错误
+      annotations:
+        # message: Errors while reconciling {{ $labels.controller }} in {{ $labels.namespace
+        #   }} Namespace.
+        message: 命名空间 {{ $labels.namespace }} 中的 {{ $labels.controller }} 时出错
+      expr: |
+        rate(prometheus_operator_reconcile_errors_total{job="prometheus-operator",namespace="monitoring"}[5m]) > 0.1
+      for: 10m
+      labels:
+        severity: warning
+    - alert: PrometheusOperator节点查找错误
+      annotations:
+        # message: Errors while reconciling Prometheus in {{ $labels.namespace }} Namespace.
+        message: 命名空间 {{ $labels.namespace }} 中的 PrometheusOperator 出错
+      expr: |
+        rate(prometheus_operator_node_address_lookup_errors_total{job="prometheus-operator",namespace="monitoring"}[5m]) > 0.1
+      for: 10m
+      labels:
+        severity: warning
